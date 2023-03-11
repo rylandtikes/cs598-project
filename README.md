@@ -5,6 +5,8 @@
 
 ## References
 
+Zhu, W., & Razavian, N. (2021). Variationally regularized graph-based representation learning for electronic health records. ArXiv (Cornell University). https://doi.org/10.1145/3450439.3451855
+
 
 ## Demo Video
 
