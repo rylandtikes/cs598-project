@@ -12,10 +12,13 @@ from model import VariationalGNN
 from utils import train, evaluate, EHRData, collate_fn
 import os
 import logging
-if torch.cuda.is_available():
-    device = 'cuda'
-else:
-    device = 'cpu'
+
+
+#if torch.cuda.is_available():
+#    device = 'cuda'
+#else:
+#    device = 'cpu'
+device = 'cuda'
 print(device)
 
 def main():

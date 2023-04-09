@@ -4,10 +4,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import copy
 
-if torch.cuda.is_available():
-    device = 'cuda'
-else:
-    device = 'cpu'
+#if torch.cuda.is_available():
+#    device = 'cuda'
+#else:
+#    device = 'cpu'
+device = 'cuda'
 print(device)
 
 def clones(module, N):
