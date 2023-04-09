@@ -3,10 +3,11 @@ import numpy as np
 from sklearn.metrics import precision_recall_curve, auc
 from torch.utils.data import Dataset
 
-if torch.cuda.is_available():
-    device = 'cuda'
-else:
-    device = 'cpu'
+#if torch.cuda.is_available():
+#    device = 'cuda'
+#else:
+#    device = 'cpu'
+device = 'cuda'
 print(device)
 
 
