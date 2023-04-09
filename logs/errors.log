@@ -1,0 +1,76 @@
+Learning rate:0.0001                                                                                                                               
+Traceback (most recent call last):                                                                                                                 
+  File "/home/ubuntu/cs598-project/train.py", line 108, in <module>
+    main()
+  File "/home/ubuntu/cs598-project/train.py", line 91, in main
+    loss, kld, bce = train(batch_data, model, optimizer, criterion, args.lbd, 5)
+  File "/home/ubuntu/cs598-project/utils.py", line 19, in train
+    logits, kld = model(input)
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/modules/module.py", line 1102, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/parallel/data_parallel.py", line 166, in forward
+    return self.module(*inputs[0], **kwargs[0])
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/modules/module.py", line 1102, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ubuntu/cs598-project/model.py", line 210, in forward
+    outputs = [self.encoder_decoder(data[i, :]) for i in range(batch_size)]
+  File "/home/ubuntu/cs598-project/model.py", line 210, in <listcomp>
+    outputs = [self.encoder_decoder(data[i, :]) for i in range(batch_size)]
+  File "/home/ubuntu/cs598-project/model.py", line 190, in encoder_decoder
+    h_prime = attn(input_edges, h_prime)
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/modules/module.py", line 1102, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ubuntu/cs598-project/model.py", line 106, in forward
+    h_prime = torch.cat([self.attention(l, a, N, data, edge) for l, a in zip(self.W, self.a)], dim=1)
+  File "/home/ubuntu/cs598-project/model.py", line 106, in <listcomp>
+    h_prime = torch.cat([self.attention(l, a, N, data, edge) for l, a in zip(self.W, self.a)], dim=1)
+  File "/home/ubuntu/cs598-project/model.py", line 86, in attention
+    edge_e = torch.sparse_coo_tensor(edge, edge_e, torch.Size([N, N]))
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument values in method wrapper___sparse_coo_tensor_with_dims_and_tensors)
+
+
+s/
+cuda
+cuda
+cuda
+Learning rate:0.0001
+[epoch:1] loss: 217.4725, bce: 11.3479, kld: 206.1246:  83%|██████████████████████████████████████████▍        | 1000/1202 [13:03<02:38,  1.28it/s]epoch:1 AUPRC:0.264151; loss: 209.6639, bce: 11.3253, kld: 198.3386
+Learning rate:0.0001                                                                                                                               
+[epoch:2] loss: 24.7927, bce: 10.6456, kld: 14.1471:  83%|████████████████████████████████████████████         | 1000/1202 [13:05<02:38,  1.27it/s]epoch:2 AUPRC:0.301225; loss: 24.3124, bce: 10.6535, kld: 13.6589
+Learning rate:0.0001                                                                                                                               
+[epoch:3] loss: 11.7446, bce: 10.4493, kld: 1.2953:  83%|████████████████████████████████████████████▉         | 1000/1202 [13:04<02:38,  1.28it/s]epoch:3 AUPRC:0.321043; loss: 11.6959, bce: 10.4404, kld: 1.2555
+Learning rate:0.0001                                                                                                                               
+[epoch:4] loss: 10.4907, bce: 10.2545, kld: 0.2362:  83%|████████████████████████████████████████████▉         | 1000/1202 [13:04<02:39,  1.27it/s]epoch:4 AUPRC:0.336030; loss: 10.4863, bce: 10.2545, kld: 0.2318
+Learning rate:0.0001                                                                                                                               
+[epoch:5] loss: 10.2777, bce: 10.1740, kld: 0.1037:  83%|████████████████████████████████████████████▉         | 1000/1202 [13:03<02:38,  1.28it/s]epoch:5 AUPRC:0.342086; loss: 10.2911, bce: 10.1885, kld: 0.1026
+Learning rate:5e-05                                                                                                                                
+[epoch:6] loss: 10.2094, bce: 10.1382, kld: 0.0712:  83%|████████████████████████████████████████████▉         | 1000/1202 [13:03<02:38,  1.27it/s]epoch:6 AUPRC:0.345086; loss: 10.2129, bce: 10.1417, kld: 0.0711
+Learning rate:5e-05                                                                                                                                
+Traceback (most recent call last):                                                                                                                 
+  File "/home/ubuntu/cs598-project/train.py", line 111, in <module>
+    main()
+  File "/home/ubuntu/cs598-project/train.py", line 94, in main
+    loss, kld, bce = train(batch_data, model, optimizer, criterion, args.lbd, 5)
+  File "/home/ubuntu/cs598-project/utils.py", line 20, in train
+    logits, kld = model(input)
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/modules/module.py", line 1102, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/parallel/data_parallel.py", line 166, in forward
+    return self.module(*inputs[0], **kwargs[0])
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/modules/module.py", line 1102, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ubuntu/cs598-project/model.py", line 211, in forward
+    outputs = [self.encoder_decoder(data[i, :]) for i in range(batch_size)]
+  File "/home/ubuntu/cs598-project/model.py", line 211, in <listcomp>
+    outputs = [self.encoder_decoder(data[i, :]) for i in range(batch_size)]
+  File "/home/ubuntu/cs598-project/model.py", line 191, in encoder_decoder
+    h_prime = attn(input_edges, h_prime)
+  File "/home/ubuntu/anaconda3/envs/cs598-project-py36/lib/python3.6/site-packages/torch/nn/modules/module.py", line 1102, in _call_impl
+    return forward_call(*input, **kwargs)
+  File "/home/ubuntu/cs598-project/model.py", line 107, in forward
+    h_prime = torch.cat([self.attention(l, a, N, data, edge) for l, a in zip(self.W, self.a)], dim=1)
+  File "/home/ubuntu/cs598-project/model.py", line 107, in <listcomp>
+    h_prime = torch.cat([self.attention(l, a, N, data, edge) for l, a in zip(self.W, self.a)], dim=1)
+  File "/home/ubuntu/cs598-project/model.py", line 87, in attention
+    edge_e = torch.sparse_coo_tensor(edge, edge_e, torch.Size([N, N]))
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cpu and cuda:0! (when checking argument for argument values in method wrapper___sparse_coo_tensor_with_dims_and_tensors)
