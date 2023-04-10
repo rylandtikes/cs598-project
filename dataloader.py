@@ -1,3 +1,9 @@
+'''
+This code is adapted from Variationally Regularized Graph-based
+Representation Learning for Electronic Health Records (cited)
+https://github.com/NYUMedML/GNN_for_EHR
+'''
+
 from torch.utils.data import Dataset
 import pickle
 import numpy as np
