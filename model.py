@@ -1,13 +1,22 @@
+'''
+This code is adapted from Variationally Regularized Graph-based
+Representation Learning for Electronic Health Records (cited)
+https://github.com/NYUMedML/GNN_for_EHR
+'''
+
 import torch
 import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import copy
 
-#if torch.cuda.is_available():
-#    device = 'cuda'
-#else:
-#    device = 'cpu'
+'''
+if torch.cuda.is_available():
+    device = 'cuda'
+else:
+    device = 'cpu'
+'''
+
 device = 'cuda'
 print(device)
 
