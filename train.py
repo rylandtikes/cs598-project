@@ -1,3 +1,9 @@
+'''
+This code is adapted from Variationally Regularized Graph-based
+Representation Learning for Electronic Health Records (cited)
+https://github.com/NYUMedML/GNN_for_EHR
+'''
+
 import argparse
 import torch
 import numpy as np
@@ -14,12 +20,14 @@ import os
 import logging
 
 
+
 # setting device on GPU if available, else CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print('Using device:', device)
 
 if device.type == 'cuda':
     print(torch.cuda.get_device_name(0))
+
 
 def main():
     parser = argparse.ArgumentParser(description='configuraitons')
