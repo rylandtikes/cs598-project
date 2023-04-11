@@ -10,15 +10,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import copy
 
-'''
-if torch.cuda.is_available():
-    device = 'cuda'
-else:
-    device = 'cpu'
-'''
 
-device = 'cuda'
-print(device)
+# setting device on GPU if available, else CPU
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print('Using device:', device)
+
+if device.type == 'cuda':
+    print(torch.cuda.get_device_name(0))
+
 
 def clones(module, N):
     return nn.ModuleList([copy.deepcopy(module) for _ in range(N)])
@@ -93,7 +92,7 @@ class GraphLayer(nn.Module):
         edge_e = torch.exp(self.leakyrelu(a.mm(edge_h).squeeze()) / np.sqrt(self.hidden_features * self.num_of_heads))
         assert not torch.isnan(edge_e).any()
         # edge_e: E
-        edge_e = torch.sparse_coo_tensor(edge, edge_e, torch.Size([N, N]))
+        edge_e = torch.sparse_coo_tensor(edge.to(device), edge_e.to(device), torch.Size([N, N]))
         e_rowsum = torch.sparse.mm(edge_e, torch.ones(size=(N, 1)).to(device))
         # e_rowsum: N x 1
         row_check = (e_rowsum == 0)
