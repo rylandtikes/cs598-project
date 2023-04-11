@@ -3,12 +3,13 @@ import numpy as np
 from sklearn.metrics import precision_recall_curve, auc
 from torch.utils.data import Dataset
 
-#if torch.cuda.is_available():
-#    device = 'cuda'
-#else:
-#    device = 'cpu'
-device = 'cuda'
-print(device)
+
+# setting device on GPU if available, else CPU
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print('Using device:', device)
+
+if device.type == 'cuda':
+    print(torch.cuda.get_device_name(0))
 
 
 def train(data, model, optim, criterion, lbd, max_clip_norm=5):
