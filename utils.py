@@ -1,3 +1,9 @@
+'''
+This code is adapted from Variationally Regularized Graph-based
+Representation Learning for Electronic Health Records (cited)
+https://github.com/NYUMedML/GNN_for_EHR
+'''
+
 import torch
 import numpy as np
 from sklearn.metrics import precision_recall_curve, auc
@@ -10,6 +16,7 @@ print('Using device:', device)
 
 if device.type == 'cuda':
     print(torch.cuda.get_device_name(0))
+
 
 
 def train(data, model, optim, criterion, lbd, max_clip_norm=5):
