@@ -20,15 +20,14 @@ import os
 import logging
 
 
-'''
-if torch.cuda.is_available():
-    device = 'cuda'
-else:
-    device = 'cpu'
-'''
 
-device = 'cuda'
-print(device)
+# setting device on GPU if available, else CPU
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print('Using device:', device)
+
+if device.type == 'cuda':
+    print(torch.cuda.get_device_name(0))
+
 
 def main():
     parser = argparse.ArgumentParser(description='configuraitons')
@@ -79,6 +78,7 @@ def main():
     # initialize models
     num_of_nodes = train_x.shape[1] + 1
     device_ids = range(torch.cuda.device_count())
+    
     # eICU has 1 feature on previous readmission that we didn't include in the graph
     model = VariationalGNN(in_feature, out_feature, num_of_nodes, n_heads, n_layers,
                            dropout=dropout, alpha=alpha, variational=args.reg, none_graph_features=0).to(device)
