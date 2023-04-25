@@ -44,6 +44,11 @@ hp_default_dict = {
     'reg': {'type': str, 'default': 'True', 'help': 'apply variational regularization',
             'choices': ["True", "False", "true", "false"]},
     'kl_scale': {'type': float, 'default': 1.0, 'help': 'scaling of KL divergence'},
+    'leaky_relu_alpha': {'type': float, 'default': 0.1,
+                         'help': 'angle of negative slope in LeakyReLU function'},
+    'upsample_factor': {'type': int, 'default': 2,
+                        'help': 'upsample scale factor for training data'},
+    'num_of_epochs': {'type': int, 'default': 50, 'help': 'number of epochs to train'},
 }
 
 
@@ -61,11 +66,9 @@ def main():
     in_features = args.embedding_size
     out_features = args.embedding_size
 
-    alpha = 0.1 # leaky ReLU
     gradient_max_norm = 5 # clip gradient to prevent exploding gradient
-    upsample_factor = 1 # TODO: upsample minority to match majority?
-    number_of_epochs = 50
     eval_freq = 1000
+    update_freq = 50
     
     # Load data and upsample training data
     train_x, train_y = None, None
@@ -75,7 +78,7 @@ def main():
         train_x, train_y = pickle.load(open(args.data_path + 'train_csr.pkl', 'rb'))
         train_upsampling = np.concatenate((np.arange(len(train_y)),
                                         np.repeat(np.where(train_y == 1)[0],
-                                        upsample_factor)))
+                                        args.upsample_factor - 1)))
         train_x = train_x[train_upsampling]
         train_y = train_y[train_upsampling]
     val_x, val_y = pickle.load(open(args.data_path + 'validation_csr.pkl', 'rb'))
@@ -101,8 +104,9 @@ def main():
     
     # eICU has 1 feature on previous readmission that we didn't include in the graph
     model = VariationalGNN(in_features, out_features, num_of_nodes, args.num_of_heads,
-                           args.num_of_layers - 1, dropout=args.dropout, alpha=alpha,
-                           variational=args.reg, none_graph_features=0).to(device)
+                           args.num_of_layers - 1, dropout=args.dropout,
+                           alpha=args.leaky_relu_alpha, variational=args.reg,
+                           none_graph_features=0).to(device)
     model = nn.DataParallel(model, device_ids=device_ids)
     val_loader = DataLoader(dataset=EHRData(val_x, val_y), batch_size=args.batch_size,
                             collate_fn=collate_fn, num_workers=torch.cuda.device_count(),
@@ -112,7 +116,7 @@ def main():
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
     # Train models
-    for epoch in range(number_of_epochs):
+    for epoch in range(args.num_of_epochs):
         print("Learning rate:{}".format(optimizer.param_groups[0]['lr']))
         ratio = Counter(train_y)
         train_loader = DataLoader(dataset=EHRData(train_x, train_y), batch_size=args.batch_size,
@@ -134,7 +138,7 @@ def main():
                              (epoch + 1, val_auprc, total_loss[0]/idx, total_loss[1]/idx, total_loss[2]/idx))
                 print('epoch:%d AUPRC:%f; loss: %.4f, bce: %.4f, kld: %.4f' %
                       (epoch + 1, val_auprc, total_loss[0]/idx, total_loss[1]/idx, total_loss[2]/idx))
-            if idx % 50 == 0 and idx > 0:
+            if idx % update_freq == 0 and idx > 0:
                 t.set_description('[epoch:%d] loss: %.4f, bce: %.4f, kld: %.4f' %
                                   (epoch + 1, total_loss[0]/idx, total_loss[1]/idx, total_loss[2]/idx))
                 t.refresh()
