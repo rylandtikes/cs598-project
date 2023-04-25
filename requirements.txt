@@ -1,5 +1,6 @@
 numpy==1.19.5
 pandas==1.1.5
+protobuf==3.20.*
 scikit_learn==1.2.2
 scipy==1.5.4
 tensorflow==2.6.2
