@@ -33,6 +33,8 @@ hp_default_dict = {
     'config_path': {'type': str, 'help': 'load parameters from file'},
     'result_path': {'type': str, 'default': '.', 'help': 'output path of model checkpoints'},
     'data_path': {'type': str, 'required': True, 'help': 'input path of processed dataset'},
+    'test': {'type': str, 'default': 'False', 'help': 'train with test dataset partition',
+            'choices': ["True", "False", "true", "false"]},
     'embedding_size': {'type': int, 'default': 256, 'help': 'embedding dimenstion size'},
     'num_of_layers': {'type': int, 'default': 2, 'help': 'number of graph layers'},
     'num_of_heads': {'type': int, 'default': 1, 'help': 'number of attention heads'},
@@ -55,6 +57,7 @@ def main():
     if type(args.config_path) == str:
         read_config_file(args, hp_default_dict)
     args.reg = args.reg.lower() == 'true'
+    args.test = args.test.lower() == 'true'
     in_features = args.embedding_size
     out_features = args.embedding_size
 
@@ -63,40 +66,49 @@ def main():
     upsample_factor = 1 # TODO: upsample minority to match majority?
     number_of_epochs = 50
     eval_freq = 1000
+    
+    # Load data and upsample training data
+    train_x, train_y = None, None
+    if args.test:
+        train_x, train_y = pickle.load(open(args.data_path + 'test_csr.pkl', 'rb'))
+    else:
+        train_x, train_y = pickle.load(open(args.data_path + 'train_csr.pkl', 'rb'))
+        train_upsampling = np.concatenate((np.arange(len(train_y)),
+                                        np.repeat(np.where(train_y == 1)[0],
+                                        upsample_factor)))
+        train_x = train_x[train_upsampling]
+        train_y = train_y[train_upsampling]
+    val_x, val_y = pickle.load(open(args.data_path + 'validation_csr.pkl', 'rb'))
 
     # Configure logging
-    ts_now = datetime.now().strftime('%Y%m%d%H%M%S')
-    result_folder = f'lr_{args.lr}-input_{in_features}-output_{out_features}-dropout_{args.dropout}'
+    result_folder = (f'reg_{str(args.reg)}-lr_{args.lr}-dropout_{args.dropout}-'
+                     f'embedding_{in_features}-batch_size_{args.batch_size}')
+    if args.test:
+        result_folder += '-TEST'
     result_root = Path(args.result_path) / result_folder
     result_root.mkdir(exist_ok=True, parents=True)
     write_config_file(result_root, args)
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    logging.basicConfig(filename='%s/train.log' % result_root, format='%(asctime)s %(message)s', level=logging.INFO)
-    logging.info("Time:%s" %ts_now)
-    
-    # Load data and upsample training data
-    train_x, train_y = pickle.load(open(args.data_path + 'train_csr.pkl', 'rb'))
-    val_x, val_y = pickle.load(open(args.data_path + 'validation_csr.pkl', 'rb'))
-    test_x, test_y = pickle.load(open(args.data_path + 'test_csr.pkl', 'rb'))
-    train_upsampling = np.concatenate((np.arange(len(train_y)),
-                                       np.repeat(np.where(train_y == 1)[0],
-                                       upsample_factor)))
-    train_x = train_x[train_upsampling]
-    train_y = train_y[train_upsampling]
+    logging.basicConfig(filename=result_root/'train.log', format='%(asctime)s %(message)s',
+                        level=logging.INFO)
+    dataset_name = 'test' if args.test else 'training'
+    logging.info(f'Begin training with {dataset_name} dataset...')
 
     # initialize models
     num_of_nodes = train_x.shape[1] + 1
     device_ids = range(torch.cuda.device_count())
     
     # eICU has 1 feature on previous readmission that we didn't include in the graph
-    model = VariationalGNN(in_features, out_features, num_of_nodes, args.num_of_heads, args.num_of_layers - 1,
-                           dropout=args.dropout, alpha=alpha, variational=args.reg,
-                           none_graph_features=0).to(device)
+    model = VariationalGNN(in_features, out_features, num_of_nodes, args.num_of_heads,
+                           args.num_of_layers - 1, dropout=args.dropout, alpha=alpha,
+                           variational=args.reg, none_graph_features=0).to(device)
     model = nn.DataParallel(model, device_ids=device_ids)
     val_loader = DataLoader(dataset=EHRData(val_x, val_y), batch_size=args.batch_size,
-                            collate_fn=collate_fn, num_workers=torch.cuda.device_count(), shuffle=False)
-    optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=1e-8)
+                            collate_fn=collate_fn, num_workers=torch.cuda.device_count(),
+                            shuffle=False)
+    optimizer = optim.Adam([p for p in model.parameters() if p.requires_grad], lr=args.lr,
+                           weight_decay=1e-8)
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
 
     # Train models
@@ -104,14 +116,16 @@ def main():
         print("Learning rate:{}".format(optimizer.param_groups[0]['lr']))
         ratio = Counter(train_y)
         train_loader = DataLoader(dataset=EHRData(train_x, train_y), batch_size=args.batch_size,
-                                  collate_fn=collate_fn, num_workers=torch.cuda.device_count(), shuffle=True)
+                                  collate_fn=collate_fn, num_workers=torch.cuda.device_count(),
+                                  shuffle=True)
         pos_weight = torch.ones(1).float().to(device) * (ratio[True] / ratio[False])
         criterion = nn.BCEWithLogitsLoss(reduction="sum", pos_weight=pos_weight)
         t = tqdm(iter(train_loader), leave=False, total=len(train_loader))
         model.train()
         total_loss = np.zeros(3)
         for idx, batch_data in enumerate(t):
-            loss, kld, bce = train(batch_data, model, optimizer, criterion, args.kl_scale, gradient_max_norm)
+            loss, kld, bce = train(batch_data, model, optimizer, criterion, args.kl_scale,
+                                   gradient_max_norm)
             total_loss += np.array([loss, bce, kld])
             if idx % eval_freq == 0 and idx > 0:
                 torch.save(model.state_dict(), "{}/parameter{}_{}".format(result_root, epoch, idx))
