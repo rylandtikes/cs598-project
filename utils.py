@@ -4,11 +4,16 @@ Representation Learning for Electronic Health Records (cited)
 https://github.com/NYUMedML/GNN_for_EHR
 '''
 
-import torch
+import argparse
+
 import numpy as np
 from sklearn.metrics import precision_recall_curve, auc
+import torch
 from torch.utils.data import Dataset
+import yaml
 
+
+CONFIG_FILE = 'config.yaml'
 
 # setting device on GPU if available, else CPU
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -74,4 +79,42 @@ def collate_fn(data):
     data_list = []
     for datum in data:
         data_list.append(np.hstack((datum[0].toarray().ravel(), datum[1])))
-    return torch.from_numpy(np.array(data_list)).long()
+    return torch.from_numpy(np.array(data_list)).long()        
+    
+    """
+    """
+def read_config_file(args, hp_default_dict):
+    """Reads a hyperparameter configuration file and updates arguments.
+
+       Used to read hyperparameters from file for consistency across training runs. The
+       configuration file is YAML-formatted. This updates the ArgumentParser object with its
+       contents.
+
+    Args:
+        args (ArgumentParser): command line arguments
+        hp_default_dict (dict): default hyperparameter settings
+    """
+
+    with open(args.config_path, mode="r") as file:
+        cfg_dict = yaml.safe_load(file)
+    for key, val in cfg_dict.items():
+        if key in args:
+            print(f"found {key}: {val}")
+            setattr(args, key, hp_default_dict[key]["type"](val))
+        else:
+            print(f"Key \"{key}\" from configuration file is not a valid parameter.")
+
+def write_config_file(file_path, args):
+    """Writes the hyperparameters to file.
+
+       Generates a YAML-formatted file with all arguments that can be supplied via CLI, including
+       configuration file.
+
+    Args:
+        file_path (str): path to result folder
+        args (ArgumentParser): command line arguments
+    """
+    config_dict = vars(args)
+    config_dict.pop('config_path', None)
+    with open(file_path / CONFIG_FILE, mode='wt', encoding='utf-8') as cf:
+        yaml.dump(config_dict, cf)
