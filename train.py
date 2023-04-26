@@ -6,7 +6,6 @@ https://github.com/NYUMedML/GNN_for_EHR
 
 import argparse
 from collections import Counter
-from datetime import datetime
 from pathlib import Path
 import pickle
 import logging
@@ -28,29 +27,58 @@ print('Using device:', device)
 
 if device.type == 'cuda':
     print(torch.cuda.get_device_name(0))
+
+def str_to_bool(input_str):
+    """Converts string to Boolean.
+       Valid formats are true/false, 1/0, yes/no, y/n
+
+    Args:
+        input_str (str): input string
+
+    Raises:
+        ValueError: input string not a valid Boolean
+
+    Returns:
+        bool: Boolean representation of input string
+    """
+    if type(input_str) == bool:
+        return input_str
+    input_str = input_str.lower()
+    pos = ('true', '1', 'yes', 'y')
+    neg = ('false', '0', 'no', 'n')
+    valid_inputs = pos + neg
+    if not input_str in valid_inputs:
+        msg = f'Invalid argument. Argument must be a Boolean. Examples: {valid_inputs}'
+        print(msg + '\n')
+        raise ValueError(msg)
+    return input_str in pos
     
 hp_default_dict = {
     'config_path': {'type': str, 'help': 'load parameters from file'},
     'result_path': {'type': str, 'default': '.', 'help': 'output path of model checkpoints'},
-    'data_path': {'type': str, 'required': True, 'help': 'input path of processed dataset'},
-    'test': {'type': str, 'default': 'False', 'help': 'train with test dataset partition',
-            'choices': ["True", "False", "true", "false"]},
+    'data_path': {'type': str, 'help': 'input path of processed dataset'},
+    'test': {'type': str_to_bool, 'default': 'False', 'help': 'train with test dataset partition'},
     'embedding_size': {'type': int, 'default': 256, 'help': 'embedding dimenstion size'},
     'num_of_layers': {'type': int, 'default': 2, 'help': 'number of graph layers'},
     'num_of_heads': {'type': int, 'default': 1, 'help': 'number of attention heads'},
     'lr': {'type': float, 'default': 1e-4, 'help': 'initial learning rate'},
     'batch_size': {'type': int, 'default': 32, 'help': 'batch size'},
     'dropout': {'type': float, 'default': 0.4, 'help': 'dropout rate'},
-    'reg': {'type': str, 'default': 'True', 'help': 'apply variational regularization',
-            'choices': ["True", "False", "true", "false"]},
+    'reg': {'type': str_to_bool, 'default': 'True',
+            'help': 'apply variational regularization'},
     'kl_scale': {'type': float, 'default': 1.0, 'help': 'scaling of KL divergence'},
     'leaky_relu_alpha': {'type': float, 'default': 0.1,
                          'help': 'angle of negative slope in LeakyReLU function'},
     'upsample_factor': {'type': int, 'default': 2,
                         'help': 'upsample scale factor for training data'},
     'num_of_epochs': {'type': int, 'default': 50, 'help': 'number of epochs to train'},
+    'save_model': {'type': str_to_bool, 'default': 'True',
+                   'help': 'whether to save the model parameters to file once per epoch'},
+    'overwrite_save': {'type': str_to_bool, 'default': 'False',
+                      'help': 'whether model parameter file is overwritten or appended'},
+    'eval_freq': {'type': int, 'default': 1,
+                   'help': 'how often to evaluate training, in epochs'},
 }
-
 
 def main():
     parser = argparse.ArgumentParser(description='configurations')
@@ -61,14 +89,10 @@ def main():
     args = parser.parse_args()
     if type(args.config_path) == str:
         read_config_file(args, hp_default_dict)
-    args.reg = args.reg.lower() == 'true'
-    args.test = args.test.lower() == 'true'
     in_features = args.embedding_size
     out_features = args.embedding_size
 
     gradient_max_norm = 5 # clip gradient to prevent exploding gradient
-    eval_freq = 1000
-    update_freq = 50
     
     # Load data and upsample training data
     train_x, train_y = None, None
@@ -93,7 +117,7 @@ def main():
     write_config_file(result_root, args)
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    logging.basicConfig(filename=result_root/'train.log', format='%(asctime)s %(message)s',
+    logging.basicConfig(filename=result_root/'train.log', format='%(asctime)s, %(message)s',
                         level=logging.INFO)
     dataset_name = 'test' if args.test else 'training'
     logging.info(f'Begin training with {dataset_name} dataset...')
@@ -117,31 +141,51 @@ def main():
 
     # Train models
     for epoch in range(args.num_of_epochs):
-        print("Learning rate:{}".format(optimizer.param_groups[0]['lr']))
-        ratio = Counter(train_y)
         train_loader = DataLoader(dataset=EHRData(train_x, train_y), batch_size=args.batch_size,
                                   collate_fn=collate_fn, num_workers=torch.cuda.device_count(),
                                   shuffle=True)
-        pos_weight = torch.ones(1).float().to(device) * (ratio[True] / ratio[False])
+        # BCE Loss is weighted by positive-negative ratio
+        counter = Counter(train_y)
+        ratio = counter[True] / counter[False]
+        pos_weight = torch.ones(1).float().to(device) * ratio
         criterion = nn.BCEWithLogitsLoss(reduction="sum", pos_weight=pos_weight)
-        t = tqdm(iter(train_loader), leave=False, total=len(train_loader))
+
+        # Configure logging within epoch
+        print(f'Epoch: {epoch + 1}, Learning rate: {optimizer.param_groups[0]["lr"]}')
+        num_batches = len(train_loader)
+        last_batch = num_batches - 1
+        update_interval = max(round(num_batches / 20.0, 0), 1)
+
+        # Iterate through batches within epoch
         model.train()
         total_loss = np.zeros(3)
+        t = tqdm(iter(train_loader), leave=False, total=last_batch, unit='batch')
         for idx, batch_data in enumerate(t):
+            # Train model on batch
             loss, kld, bce = train(batch_data, model, optimizer, criterion, args.kl_scale,
                                    gradient_max_norm)
             total_loss += np.array([loss, bce, kld])
-            if idx % eval_freq == 0 and idx > 0:
-                torch.save(model.state_dict(), "{}/parameter{}_{}".format(result_root, epoch, idx))
-                val_auprc, _ = evaluate(model, val_loader, len(val_y))
-                logging.info('epoch:%d AUPRC:%f; loss: %.4f, bce: %.4f, kld: %.4f' %
-                             (epoch + 1, val_auprc, total_loss[0]/idx, total_loss[1]/idx, total_loss[2]/idx))
-                print('epoch:%d AUPRC:%f; loss: %.4f, bce: %.4f, kld: %.4f' %
-                      (epoch + 1, val_auprc, total_loss[0]/idx, total_loss[1]/idx, total_loss[2]/idx))
-            if idx % update_freq == 0 and idx > 0:
-                t.set_description('[epoch:%d] loss: %.4f, bce: %.4f, kld: %.4f' %
-                                  (epoch + 1, total_loss[0]/idx, total_loss[1]/idx, total_loss[2]/idx))
+            if idx > 0:
+                curr_loss = total_loss[0] / idx
+                curr_bce = total_loss[1] / idx
+                curr_kld = total_loss[2] / idx
+            # Report training progress within batch via tqdm
+            if (idx % update_interval == 0 or idx == last_batch) and idx > 0:
+                progress = (f'Loss: {curr_loss:.4f}, BCE: {curr_bce:.4f}, KLD: {curr_kld:.4f}')
+                t.set_description(progress)
                 t.refresh()
+            # Save model's state dictionary to file
+            if args.save_model and idx == last_batch and not args.test:
+                param_file = 'parameter' if args.overwrite_save else \
+                             f'parameter-epoch_{epoch}-batch_{idx}'
+                torch.save(model.state_dict(), result_root / param_file)
+            # Evaluate and log training
+            if idx == last_batch and (epoch + 1) % args.eval_freq == 0:
+                val_auprc, _ = evaluate(model, val_loader, len(val_y))
+                eval_log = (f'Epoch: {epoch + 1}, AUPRC: {val_auprc:.4f}, '
+                            f'Loss: {curr_loss:.4f}, BCE: {curr_bce:.4f}, KLD: {curr_kld:.4f}')
+                logging.info(eval_log)
+                print(f'AUPRC: {val_auprc:.4f}')
         scheduler.step()
 
 
