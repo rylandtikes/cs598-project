@@ -6,6 +6,7 @@ https://github.com/NYUMedML/GNN_for_EHR
 
 import argparse
 from collections import Counter
+import csv
 from pathlib import Path
 import pickle
 import logging
@@ -117,10 +118,15 @@ def main():
     write_config_file(result_root, args)
     for handler in logging.root.handlers[:]:
         logging.root.removeHandler(handler)
-    logging.basicConfig(filename=result_root/'train.log', format='%(asctime)s, %(message)s',
+    logging.basicConfig(filename=result_root/'train.log', format='%(asctime)s %(message)s',
                         level=logging.INFO)
     dataset_name = 'test' if args.test else 'training'
     logging.info(f'Begin training with {dataset_name} dataset...')
+    # csv
+    csv_fields = ['Epoch', 'AUPRC', 'Loss', 'BCE', 'KLD']
+    csv_log = open(result_root / 'train.csv', 'wt', encoding='utf-8', buffering=1)
+    csv_writer = csv.DictWriter(csv_log, delimiter=',', fieldnames=csv_fields)
+    csv_writer.writeheader()
 
     # initialize models
     num_of_nodes = train_x.shape[1] + 1
@@ -182,11 +188,16 @@ def main():
             # Evaluate and log training
             if idx == last_batch and (epoch + 1) % args.eval_freq == 0:
                 val_auprc, _ = evaluate(model, val_loader, len(val_y))
-                eval_log = (f'Epoch: {epoch + 1}, AUPRC: {val_auprc:.4f}, '
-                            f'Loss: {curr_loss:.4f}, BCE: {curr_bce:.4f}, KLD: {curr_kld:.4f}')
+                prog = {'Epoch': epoch + 1, 'AUPRC': f'{val_auprc:.4f}',
+                        'Loss': f'{curr_loss:.4f}', 'BCE': f'{curr_bce:.4f}',
+                        'KLD': f'{curr_kld:.4f}'}
+                csv_writer.writerow(prog)
+                eval_log = (f'Epoch: {prog["Epoch"]}, AUPRC: {prog["AUPRC"]}, '
+                            f'Loss: {prog["Loss"]}, BCE: {prog["BCE"]}, KLD: {prog["KLD"]}')
                 logging.info(eval_log)
                 print(f'AUPRC: {val_auprc:.4f}')
         scheduler.step()
+    csv_log.close()
 
 
 if __name__ == '__main__':
