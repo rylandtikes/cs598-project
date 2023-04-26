@@ -95,7 +95,7 @@ def read_config_file(args, hp_default_dict):
         hp_default_dict (dict): default hyperparameter settings
     """
 
-    with open(args.config_path, mode="r") as file:
+    with open(args.config_path, mode="rt", encoding='utf-8') as file:
         cfg_dict = yaml.safe_load(file)
     for key, val in cfg_dict.items():
         if key in args:
