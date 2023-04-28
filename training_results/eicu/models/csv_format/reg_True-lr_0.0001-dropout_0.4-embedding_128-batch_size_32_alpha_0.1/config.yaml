@@ -1,0 +1,17 @@
+batch_size: 32
+data_path: /ml/ehr/eicu/out/
+dropout: 0.4
+embedding_size: 128
+eval_freq: 1
+kl_scale: 1.0
+leaky_relu_alpha: 0.1
+lr: 0.0001
+num_of_epochs: 50
+num_of_heads: 1
+num_of_layers: 2
+overwrite_save: false
+reg: true
+result_path: /ml/ehr/eicu/models/run5
+save_model: true
+test: false
+upsample_factor: 2
