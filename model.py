@@ -126,36 +126,42 @@ class GraphLayer(nn.Module):
 class VariationalGNN(nn.Module):
 
     def __init__(self, in_features, out_features, num_of_nodes, n_heads, n_layers,
-                 dropout, alpha, variational=True, none_graph_features=0, concat=True):
+                 dropout, alpha, variational=True, excluded_features=0):
         super(VariationalGNN, self).__init__()
         self.variational = variational
-        self.num_of_nodes = num_of_nodes + 1 - none_graph_features
+        self.num_of_nodes = num_of_nodes + 1 - excluded_features
+        self.out_features = out_features
+        self.n_heads = n_heads
+        self.dropout = nn.Dropout(dropout)
+        self.excluded_features = excluded_features
+
+        # Encoder
         self.embed = nn.Embedding(self.num_of_nodes, in_features, padding_idx=0)
         self.in_att = clones(
             GraphLayer(in_features, in_features, in_features, self.num_of_nodes,
-                       n_heads, dropout, alpha, concat=True), n_layers)
-        self.out_features = out_features
+                       n_heads, dropout, alpha, concat=True),
+            n_layers)
+        
+        # Variational regularization
+        self.parameterize = nn.Linear(out_features, out_features * 2)
+
+        # Decoder
         self.out_att = GraphLayer(in_features, in_features, out_features, self.num_of_nodes,
                                   n_heads, dropout, alpha, concat=False)
-        self.n_heads = n_heads
-        self.dropout = nn.Dropout(dropout)
-        self.parameterize = nn.Linear(out_features, out_features * 2)
+        linear_out_input = out_features
+        if excluded_features > 0:
+            linear_out_input = out_features + out_features // 2
+            self.features_ffn = nn.Sequential(
+                nn.Linear(excluded_features, out_features // 2),
+                nn.ReLU(),
+                nn.Dropout(dropout))
         self.out_layer = nn.Sequential(
-            nn.Linear(out_features, out_features),
+            nn.Linear(linear_out_input, out_features),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(out_features, 1))
-        self.none_graph_features = none_graph_features
-        if none_graph_features > 0:
-            self.features_ffn = nn.Sequential(
-                nn.Linear(none_graph_features, out_features//2),
-                nn.ReLU(),
-                nn.Dropout(dropout))
-            self.out_layer = nn.Sequential(
-                nn.Linear(out_features + out_features//2, out_features),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(out_features, 1))
+        
+        # Initialize encoder graph layers
         for i in range(n_layers):
             self.in_att[i].initialize()
 
@@ -191,38 +197,92 @@ class VariationalGNN(nn.Module):
         else:
             return mu
 
-    def encoder_decoder(self, data):
-        N = self.num_of_nodes
-        input_edges, output_edges = self.data_to_edges(data)
-        h_prime = self.embed(torch.arange(N).long().to(device))
+    def encoder_decoder(self, codes):
+        """Passes batch through the Encoder-decoder network
+
+            First, embeddings of medical concepts are made.
+            Medical embeddings are processed by the encoder to form the graph representation. In
+            each graph layer, the graph representation is updated via self-attention.
+            If variational, a latent layer is added between the encoder and decoder to regularize
+            the graph representation.
+            The output of the encoder is then passed through the decoder, which consists of one
+            layer and self-attention. The output is the representation of the predictive node.
+
+        Args:
+            data (torch.Tensor): EHR codes for one patient of shape (num codes)
+
+        Returns:
+            (torch.Tensor, torch.Tensor): inference from decoder output of shape (embedding_dim)
+                                          and KL divergence
+        """
+        # Embedding of medical concepts
+        # h_prime: (num_of_nodes, embedding_dim)
+        h_prime = self.embed(torch.arange(self.num_of_nodes).long().to(device))
+        # Encoder
+        # input_edges: 
+        # output_edges: 
+        input_edges, output_edges = self.data_to_edges(codes)
         for attn in self.in_att:
             h_prime = attn(input_edges, h_prime)
         if self.variational:
             h_prime = self.parameterize(h_prime).view(-1, 2, self.out_features)
             h_prime = self.dropout(h_prime)
             mu = h_prime[:, 0, :]
+            # The variance is parameterized as an exponential to ensure non-negativity
             logvar = h_prime[:, 1, :]
             h_prime = self.reparameterise(mu, logvar)
-            mu = mu[data, :]
-            logvar = logvar[data, :]
+            mu = mu[codes, :]
+            logvar = logvar[codes, :]
+        # Decoder
+        # The last row of h_prime is the representation of an additional node for prediction
         h_prime = self.out_att(output_edges, h_prime)
+        out = h_prime[-1]
+        # If applying variational regularization, KL divergence is needed
         if self.variational:
-            return h_prime[-1], 0.5 * torch.sum(logvar.exp() - logvar - 1 + mu.pow(2)) / mu.size()[0]
+            kld = 0.5 * torch.sum(logvar.exp() - logvar - 1 + mu.pow(2)) / mu.size()[0]
         else:
-            return h_prime[-1], torch.tensor(0.0).to(device)
+            kld = torch.tensor(0.0).to(device)
+        return out, kld
 
-    def forward(self, data):
-        # Concate batches
-        batch_size = data.size()[0]
-        # In eicu data the first feature whether have be admitted before is not included in the graph
-        if self.none_graph_features == 0:
-            outputs = [self.encoder_decoder(data[i, :]) for i in range(batch_size)]
-            return self.out_layer(F.relu(torch.stack([out[0] for out in outputs]))), \
-                   torch.sum(torch.stack([out[1] for out in outputs]))
+    def forward(self, batch):
+        """Forward pass of VGNN or Enc-dec network.
+
+           Steps:
+           Pass nodes for each patient in batch through Encoder-decoder network, giving the
+           prediction task embedding from the decoder output and the KL divergence.
+           Determine logits (unnormalized predictions) concatenating the decoder output for all
+           patients and passing through ReLU and a FFN (self.out_layer).
+           Sum KL divergence for all patients.
+
+           If any features are excluded from the graph, they are separated, and pass through
+           self.features_ffn and then joined with the encoder-decoder output, which acts on the
+           non-excluded features.
+
+        Args:
+            batch (torch.Tensor): batch of shape (batch size, num nodes)
+
+        Returns:
+            (torch.Tensor, torch.Tensor): logits and KL divergence
+        """
+        batch_size = batch.size()[0]
+        kld_batch = []
+        included_batch = []
+        if self.excluded_features == 0:
+            for i in range(batch_size):
+                out, kld = self.encoder_decoder(batch[i, :])
+                included_batch.append(out)
+                kld_batch.append(kld)
+                out_batch = torch.stack(included_batch)
         else:
-            outputs = [(data[i, :self.none_graph_features],
-                        self.encoder_decoder(data[i, self.none_graph_features:])) for i in range(batch_size)]
-            return self.out_layer(F.relu(
-                torch.stack([torch.cat((self.features_ffn(torch.FloatTensor([out[0]]).to(device)), out[1][0]))
-                             for out in outputs]))), \
-                   torch.sum(torch.stack([out[1][1] for out in outputs]), dim=-1)
+            excluded_batch = []
+            for i in range(batch_size):
+                excluded_nodes = torch.FloatTensor([batch[i, :self.excluded_features]]).to(device)
+                excluded_batch.append(self.features_ffn(excluded_nodes))
+                out, kld = self.encoder_decoder(batch[i, self.excluded_features:])
+                included_batch.append(out)
+                kld_batch.append(kld)
+            out_batch = torch.cat((torch.stack(excluded_batch), torch.stack(included_batch)),
+                                   dim=1)
+        logits = self.out_layer(F.relu(out_batch))
+        kld_sum = torch.sum(torch.stack(kld_batch))
+        return logits, kld_sum

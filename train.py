@@ -19,7 +19,8 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from model import VariationalGNN
-from utils import train, evaluate, EHRData, collate_fn, read_config_file, write_config_file
+from utils import (collate_fn, EHRData, evaluate, read_config_file,
+                   str_to_bool, train, write_config_file)
 
 
 # setting device on GPU if available, else CPU
@@ -28,31 +29,6 @@ print('Using device:', device)
 
 if device.type == 'cuda':
     print(torch.cuda.get_device_name(0))
-
-def str_to_bool(input_str):
-    """Converts string to Boolean.
-       Valid formats are true/false, 1/0, yes/no, y/n
-
-    Args:
-        input_str (str): input string
-
-    Raises:
-        ValueError: input string not a valid Boolean
-
-    Returns:
-        bool: Boolean representation of input string
-    """
-    if type(input_str) == bool:
-        return input_str
-    input_str = input_str.lower()
-    pos = ('true', '1', 'yes', 'y')
-    neg = ('false', '0', 'no', 'n')
-    valid_inputs = pos + neg
-    if not input_str in valid_inputs:
-        msg = f'Invalid argument. Argument must be a Boolean. Examples: {valid_inputs}'
-        print(msg + '\n')
-        raise ValueError(msg)
-    return input_str in pos
     
 hp_default_dict = {
     'config_path': {'type': str, 'help': 'load parameters from file'},
@@ -72,6 +48,8 @@ hp_default_dict = {
                          'help': 'angle of negative slope in LeakyReLU function'},
     'upsample_factor': {'type': int, 'default': 2,
                         'help': 'upsample scale factor for training data'},
+    'excluded_features': {'type': int, 'default': 0,
+                        'help': 'number of features to exclude from graph during training'},
     'num_of_epochs': {'type': int, 'default': 50, 'help': 'number of epochs to train'},
     'save_model': {'type': str_to_bool, 'default': 'True',
                    'help': 'whether to save the model parameters to file once per epoch'},
@@ -94,6 +72,8 @@ def main():
     out_features = args.embedding_size
 
     gradient_max_norm = 5 # clip gradient to prevent exploding gradient
+    # In eICU data, the first feature, whether the patient has been admitted before,
+    # is not included in the graph
     
     # Load data and upsample training data
     train_x, train_y = None, None
@@ -136,7 +116,7 @@ def main():
     model = VariationalGNN(in_features, out_features, num_of_nodes, args.num_of_heads,
                            args.num_of_layers - 1, dropout=args.dropout,
                            alpha=args.leaky_relu_alpha, variational=args.reg,
-                           none_graph_features=0).to(device)
+                           excluded_features=args.excluded_features).to(device)
     model = nn.DataParallel(model, device_ids=device_ids)
     val_loader = DataLoader(dataset=EHRData(val_x, val_y), batch_size=args.batch_size,
                             collate_fn=collate_fn, num_workers=torch.cuda.device_count(),
