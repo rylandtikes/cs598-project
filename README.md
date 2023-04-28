@@ -72,6 +72,14 @@ python3 train.py --data_path /buckets/ehr/eicu/out/ --embedding_size 128 --batch
 python3 train.py --data_path /buckets/ehr/eicu/out/ --embedding_size 128 --batch_size 32 --reg True  --result_path /buckets/ehr/eicu/models/batch32/
 ```
 
+### Config File Usage:
+A configuration file may be passed as a command line argument. 
+
+```
+python3 train.py --config_path ./config.yaml
+```
+[Example Configuration File](./config.yaml)
+
 ## References
 
 Zhu, W., & Razavian, N. (2021, April). Variationally regularized graph-based representation learning for electronic health records. In Proceedings of the Conference on Health, Inference, and Learning (pp. 1-13).
