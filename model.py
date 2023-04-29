@@ -124,6 +124,8 @@ class GraphLayer(nn.Module):
 
 
 class VariationalGNN(nn.Module):
+    """Graph-based neural network. Encoder-decoder (Enc-dec) or variationally regulated (VGNN).
+    """
 
     def __init__(self, in_features, out_features, num_of_nodes, n_heads, n_layers,
                  dropout, alpha, variational=True, excluded_features=0):
@@ -165,31 +167,66 @@ class VariationalGNN(nn.Module):
         for i in range(n_layers):
             self.in_att[i].initialize()
 
-    def data_to_edges(self, data):
-        length = data.size()[0]
-        nonzero = data.nonzero()
+    @staticmethod
+    def make_fc_graph_edges(nodes):
+        """Creates a graph connectivity vector in COO format for a complete undirected graph from
+           a given set of nodes.
+
+        Args:
+            nodes (torch.Tensor): nodes of shape (n)
+
+        Returns:
+            torch.Tensor: graph connectivity vector in COO format
+        """
+        n = nodes.size()[1]
+        source = nodes.repeat(1, n) # non-zero nodes in order, repeated n times
+        dest = nodes.repeat(n, 1).transpose(0, 1).contiguous().view((1, n ** 2))
+        return torch.cat((source, dest), dim=0)
+
+    def data_to_edges(self, codes):
+        """Creates input and output graph connectivity vectors in COO format from a set of nodes.
+           Both graphs are complete and undirected. The output graph consists of the input graph
+           and one additional node for prediction.
+
+        Args:
+            codes (torch.Tensor): tensor of EHR codes for a single patient
+
+        Returns:
+            (torch.Tensor, torch.Tensor): input and output graph connectivity in COO format
+        """
+        n = codes.size()[0]
+        nonzero = codes.nonzero() # nonzero: indices with non-zero codes, of shape (num_nonzero, 1)
         if nonzero.size()[0] == 0:
-            return torch.LongTensor([[0], [0]]), torch.LongTensor([[length + 1], [length + 1]])
+            return torch.LongTensor([[0], [0]]), torch.LongTensor([[n + 1], [n + 1]])
         if self.training:
+            # Exclude non-zero codes with 0.05 probability
             mask = torch.rand(nonzero.size()[0])
             mask = mask > 0.05
             nonzero = nonzero[mask]
             if nonzero.size()[0] == 0:
-                return torch.LongTensor([[0], [0]]), torch.LongTensor([[length + 1], [length + 1]])
+                return torch.LongTensor([[0], [0]]), torch.LongTensor([[n + 1], [n + 1]])
+        # Input edges
+        # Nodes, of shape (1, n), incremented by 1
         nonzero = nonzero.transpose(0, 1) + 1
-        lengths = nonzero.size()[1]
-        input_edges = torch.cat((nonzero.repeat(1, lengths),
-                                 nonzero.repeat(lengths, 1).transpose(0, 1)
-                                 .contiguous().view((1, lengths ** 2))), dim=0)
+        input_edges = self.make_fc_graph_edges(nonzero)
+        # Output edges
+        # Adds a node at the end with value n + 1. Will act as prediction node.
+        nonzero = torch.cat((nonzero, torch.LongTensor([[n + 1]]).to(device)), dim=1)
+        output_edges = self.make_fc_graph_edges(nonzero)
 
-        nonzero = torch.cat((nonzero, torch.LongTensor([[length + 1]]).to(device)), dim=1)
-        lengths = nonzero.size()[1]
-        output_edges = torch.cat((nonzero.repeat(1, lengths),
-                                  nonzero.repeat(lengths, 1).transpose(0, 1)
-                                  .contiguous().view((1, lengths ** 2))), dim=0)
         return input_edges.to(device), output_edges.to(device)
 
-    def reparameterise(self, mu, logvar):
+    def reparameterize(self, mu, logvar):
+        """Sample latent variables from distribution to become input to decoder. Used in
+           variational regularization.
+
+        Args:
+            mu (torch.Tensor): mean
+            logvar (torch.Tensor): variance
+
+        Returns:
+            torch.Tensor: samples of latent distribution
+        """
         if self.training:
             std = logvar.mul(0.5).exp_()
             eps = std.data.new(std.size()).normal_()
@@ -209,7 +246,7 @@ class VariationalGNN(nn.Module):
             layer and self-attention. The output is the representation of the predictive node.
 
         Args:
-            data (torch.Tensor): EHR codes for one patient of shape (num codes)
+            codes (torch.Tensor): EHR codes for one patient of shape (num codes)
 
         Returns:
             (torch.Tensor, torch.Tensor): inference from decoder output of shape (embedding_dim)
@@ -219,18 +256,21 @@ class VariationalGNN(nn.Module):
         # h_prime: (num_of_nodes, embedding_dim)
         h_prime = self.embed(torch.arange(self.num_of_nodes).long().to(device))
         # Encoder
-        # input_edges: 
-        # output_edges: 
+        # Observed nodes are masked with 95% probability and then made into complete undirected
+        # graphs.
+        # input_edges: input graph edge connection matrix of nodes after masking
+        # output_edges: output graph edge connection matrix of input nodes and one additional node
         input_edges, output_edges = self.data_to_edges(codes)
         for attn in self.in_att:
             h_prime = attn(input_edges, h_prime)
+        # If variational regularization is used, add linear layer and sample distribution
         if self.variational:
             h_prime = self.parameterize(h_prime).view(-1, 2, self.out_features)
             h_prime = self.dropout(h_prime)
             mu = h_prime[:, 0, :]
             # The variance is parameterized as an exponential to ensure non-negativity
             logvar = h_prime[:, 1, :]
-            h_prime = self.reparameterise(mu, logvar)
+            h_prime = self.reparameterize(mu, logvar)
             mu = mu[codes, :]
             logvar = logvar[codes, :]
         # Decoder
@@ -264,18 +304,17 @@ class VariationalGNN(nn.Module):
         Returns:
             (torch.Tensor, torch.Tensor): logits and KL divergence
         """
-        batch_size = batch.size()[0]
         kld_batch = []
         included_batch = []
         if self.excluded_features == 0:
-            for i in range(batch_size):
+            for i in range(batch.size()[0]):
                 out, kld = self.encoder_decoder(batch[i, :])
                 included_batch.append(out)
                 kld_batch.append(kld)
                 out_batch = torch.stack(included_batch)
         else:
             excluded_batch = []
-            for i in range(batch_size):
+            for i in range(batch.size()[0]):
                 excluded_nodes = torch.FloatTensor([batch[i, :self.excluded_features]]).to(device)
                 excluded_batch.append(self.features_ffn(excluded_nodes))
                 out, kld = self.encoder_decoder(batch[i, self.excluded_features:])
