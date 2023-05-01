@@ -59,6 +59,8 @@ hp_default_dict = {
                       'help': 'whether model parameter file is overwritten or appended'},
     'eval_freq': {'type': int, 'default': 1,
                    'help': 'how often to evaluate training, in epochs'},
+    'manual_seed': {'type': int, 'default': -1,
+             'help': 'seed for random number generation; if negative, a manual seed is not set'},
 }
 
 def main():
@@ -74,6 +76,8 @@ def main():
     out_features = args.embedding_size
 
     gradient_max_norm = 5 # clip gradient to prevent exploding gradient
+    if args.manual_seed >= 0:
+        torch.manual_seed(args.manual_seed)
     
     # Load data and upsample training data
     train_x, train_y = None, None
