@@ -72,7 +72,6 @@ class GraphLayer(nn.Module):
                 nn.Dropout(dropout),
                 LayerNorm(hidden_features),
                 nn.ELU()
-                # linear is not present here in official code (should it be?)
             )
         else:
             self.ffn = nn.Sequential(
@@ -173,7 +172,7 @@ class VariationalGNN(nn.Module):
     """
 
     def __init__(self, in_features, out_features, num_of_nodes, n_heads, n_layers,
-                 dropout, alpha, variational=True, excluded_features=0):
+                 dropout, alpha, variational=True, excluded_features=0, mask_prob=0):
         super(VariationalGNN, self).__init__()
         self.variational = variational
         self.num_of_nodes = num_of_nodes + 1 - excluded_features
@@ -181,6 +180,7 @@ class VariationalGNN(nn.Module):
         self.n_heads = n_heads
         self.dropout = nn.Dropout(dropout)
         self.excluded_features = excluded_features
+        self.mask_prob = mask_prob
 
         # Encoder
         self.embed = nn.Embedding(self.num_of_nodes, in_features, padding_idx=0)
@@ -189,13 +189,12 @@ class VariationalGNN(nn.Module):
                        n_heads, dropout, alpha, concat=True),
             n_layers)
         
-        # Decoder
-        self.out_att = GraphLayer(in_features, in_features, out_features, self.num_of_nodes,
-                                  n_heads, dropout, alpha, concat=False)
-        
         # Variational regularization
         self.parameterize = nn.Linear(out_features, out_features * 2)
 
+        # Decoder
+        self.out_att = GraphLayer(in_features, in_features, out_features, self.num_of_nodes,
+                                  n_heads, dropout, alpha, concat=False)
         decoder_output_size = out_features
         if excluded_features > 0:
             decoder_output_size = out_features + out_features // 2
@@ -247,7 +246,6 @@ class VariationalGNN(nn.Module):
         Returns:
             (torch.Tensor, torch.Tensor): input and output graph connectivity in COO format
         """
-        mask_prob = 0.05
         n = codes.size()[0]
         observed = codes.nonzero() # observed EHR codes, of shape (num_nonzero, 1)
         if observed.size()[0] == 0:
@@ -255,7 +253,7 @@ class VariationalGNN(nn.Module):
         if self.training:
             # Exclude observed codes with 0.05 probability
             mask = torch.rand(observed.size()[0])
-            mask = mask > mask_prob
+            mask = mask > self.mask_prob
             observed = observed[mask]
             if observed.size()[0] == 0:
                 return torch.LongTensor([[0], [0]]), torch.LongTensor([[n + 1], [n + 1]])

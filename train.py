@@ -50,6 +50,8 @@ hp_default_dict = {
                         'help': 'upsample scale factor for training data'},
     'excluded_features': {'type': int, 'default': 0,
                         'help': 'number of features to exclude from graph during training'},
+    'mask_prob': {'type': float, 'default': 0.05,
+                  'help': 'probability of masking nodes of graph during training'},
     'num_of_epochs': {'type': int, 'default': 50, 'help': 'number of epochs to train'},
     'save_model': {'type': str_to_bool, 'default': 'True',
                    'help': 'whether to save the model parameters to file once per epoch'},
@@ -72,8 +74,6 @@ def main():
     out_features = args.embedding_size
 
     gradient_max_norm = 5 # clip gradient to prevent exploding gradient
-    # In eICU data, the first feature, whether the patient has been admitted before,
-    # is not included in the graph
     
     # Load data and upsample training data
     train_x, train_y = None, None
@@ -116,7 +116,8 @@ def main():
     model = VariationalGNN(in_features, out_features, num_of_nodes, args.num_of_heads,
                            args.num_of_layers - 1, dropout=args.dropout,
                            alpha=args.leaky_relu_alpha, variational=args.reg,
-                           excluded_features=args.excluded_features).to(device)
+                           excluded_features=args.excluded_features, mask_prob=args.mask_prob
+                           ).to(device)
     model = nn.DataParallel(model, device_ids=device_ids)
     val_loader = DataLoader(dataset=EHRData(val_x, val_y), batch_size=args.batch_size,
                             collate_fn=collate_fn, num_workers=torch.cuda.device_count(),
