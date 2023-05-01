@@ -63,9 +63,15 @@ class GraphLayer(nn.Module):
             nn.Parameter(torch.rand(size=(1, 2 * hidden_features)), requires_grad=True),
             num_of_heads
             )
+        
+        self.unused_ffn = nn.Sequential(
+            nn.Linear(out_features, out_features),
+            nn.ReLU()
+        )
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
         # FFN applied after attention
+
         self.linear = nn.Linear(hidden_features, out_features)
         if concat:
             self.ffn = nn.Sequential(
@@ -191,12 +197,12 @@ class VariationalGNN(nn.Module):
                        n_heads, dropout, alpha, concat=True),
             n_layers)
         
-        # Variational regularization
-        self.parameterize = nn.Linear(out_features, out_features * 2)
-
         # Decoder
         self.out_att = GraphLayer(in_features, in_features, out_features, self.num_of_nodes,
                                   n_heads, dropout, alpha, concat=False)
+        
+        # Variational regularization
+        self.parameterize = nn.Linear(out_features, out_features * 2)
         linear_out_input = out_features
         if excluded_features > 0:
             linear_out_input = out_features + out_features // 2
@@ -216,7 +222,7 @@ class VariationalGNN(nn.Module):
         # Initialize encoder graph layers
         for i in range(n_layers):
             self.in_att[i].initialize()
-        self.out_att.initialize() # Out attn intialization wasn't being performed previously
+        #self.out_att.initialize() # Out attn intialization wasn't being performed previously
 
     @staticmethod
     def make_fc_graph_edges(nodes):
