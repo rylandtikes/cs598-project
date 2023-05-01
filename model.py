@@ -63,13 +63,6 @@ class GraphLayer(nn.Module):
             nn.Parameter(torch.rand(size=(1, 2 * hidden_features)), requires_grad=True),
             num_of_heads
             )
-        
-        # TODO: remove self.unused_ffn
-        # This sequence is never used, but is left in for repeatability
-        self.unused_ffn = nn.Sequential(
-            nn.Linear(out_features, out_features),
-            nn.ReLU()
-        )
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
         # FFN applied after attention
@@ -203,15 +196,7 @@ class VariationalGNN(nn.Module):
         # Variational regularization
         self.parameterize = nn.Linear(out_features, out_features * 2)
 
-        # TODO: don't declare and overwrite self.out_layer
         decoder_output_size = out_features
-        self.out_layer = nn.Sequential(
-            nn.ReLU(),
-            nn.Linear(decoder_output_size, out_features),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(out_features, 1)
-            )
         if excluded_features > 0:
             decoder_output_size = out_features + out_features // 2
             self.features_ffn = nn.Sequential(
@@ -219,20 +204,18 @@ class VariationalGNN(nn.Module):
                 nn.ReLU(),
                 nn.Dropout(dropout)
                 )
-            self.out_layer = nn.Sequential(
-                nn.ReLU(),
-                nn.Linear(decoder_output_size, out_features),
-                nn.ReLU(),
-                nn.Dropout(dropout),
-                nn.Linear(out_features, 1)
-                )
+        self.out_layer = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(decoder_output_size, out_features),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(out_features, 1)
+            )
         
         # Initialize encoder graph layers
         for i in range(n_layers):
             self.in_att[i].initialize()
-        # TODO: initialize outwards attention layer
-        # Official code does not initialize
-        #self.out_att.initialize()
+        self.out_att.initialize()
 
     @staticmethod
     def make_fc_graph_edges(nodes):
@@ -387,9 +370,6 @@ class VariationalGNN(nn.Module):
                 out, kld = self.encoder_decoder(batch[i, self.excluded_features:])
                 included_batch.append(out)
                 kld_batch.append(kld)
-            # TODO: join with above loop. There is no need to use two separate loops, since
-            # they're not dependent
-            for i in range(batch.size()[0]):
                 excluded_nodes = torch.FloatTensor([batch[i, :self.excluded_features]]).to(device)
                 excluded_batch.append(self.features_ffn(excluded_nodes))
             out_batch = torch.cat((torch.stack(excluded_batch), torch.stack(included_batch)),
