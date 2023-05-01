@@ -24,17 +24,33 @@ if device.type == 'cuda':
 
 
 
-def train(data, model, optim, criterion, lbd, max_clip_norm=5):
-    model.train()
+def train(data, model, optim, criterion, kl_scale, max_clip_norm=5):
+    """Trains model for one batch and reports loss.
+
+    Args:
+        data (torch.Tensor): batch of shape (batch size, num nodes)
+        model (torch.nn.Module): model being used to train
+        optim (torch.optim): optimizer to hold state and update parameters based on gradients
+        criterion: loss function
+        kl_scale (float): weight of KL divergence term
+        max_clip_norm (int, optional): maximum norm of gradient before it is clipped. Defaults to 5.
+
+    Returns:
+        (float, float, float): loss, KL divergence and BCE loss after model training pass
+    """
+    #model.train()
+    # The last code is the label
     input = data[:, :-1].to(device)
     label = data[:, -1].float().to(device)
+    # Training
     model.train()
     optim.zero_grad()
     logits, kld = model(input)
+    # Loss considers binary cross-entropy and weighted KL divergence
     logits = logits.squeeze(-1)
     kld = kld.sum()
     bce = criterion(logits, label)
-    loss = bce + lbd * kld
+    loss = bce + kl_scale * kld
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_clip_norm)
     loss.backward()
     optim.step()
@@ -118,3 +134,28 @@ def write_config_file(file_path, args):
     config_dict.pop('config_path', None)
     with open(file_path / CONFIG_FILE, mode='wt', encoding='utf-8') as cf:
         yaml.dump(config_dict, cf)
+
+def str_to_bool(input_str):
+    """Converts string to Boolean.
+       Valid formats are true/false, 1/0, yes/no, y/n
+
+    Args:
+        input_str (str): input string
+
+    Raises:
+        ValueError: input string not a valid Boolean
+
+    Returns:
+        bool: Boolean representation of input string
+    """
+    if type(input_str) == bool:
+        return input_str
+    input_str = input_str.lower()
+    pos = ('true', '1', 'yes', 'y')
+    neg = ('false', '0', 'no', 'n')
+    valid_inputs = pos + neg
+    if not input_str in valid_inputs:
+        msg = f'Invalid argument. Argument must be a Boolean. Examples: {valid_inputs}'
+        print(msg + '\n')
+        raise ValueError(msg)
+    return input_str in pos
