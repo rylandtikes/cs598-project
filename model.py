@@ -64,6 +64,8 @@ class GraphLayer(nn.Module):
             num_of_heads
             )
         
+        # TODO: remove self.unused_ffn
+        # This sequence is never used, but is left in for repeatability
         self.unused_ffn = nn.Sequential(
             nn.Linear(out_features, out_features),
             nn.ReLU()
@@ -71,7 +73,6 @@ class GraphLayer(nn.Module):
         self.leakyrelu = nn.LeakyReLU(self.alpha)
 
         # FFN applied after attention
-
         self.linear = nn.Linear(hidden_features, out_features)
         if concat:
             self.ffn = nn.Sequential(
@@ -160,8 +161,6 @@ class GraphLayer(nn.Module):
         Returns:
             torch.Tensor: updated representation of EHR codes
         """
-        # TODO: separate forward for multi-head?
-
         # If using multi-head attention (self.num_of_heads > 1), compute attention coeffs multiple
         # times. If is input layer (self.concat), aggregate coeffs by concatenation.
         attn_list = []
@@ -203,26 +202,37 @@ class VariationalGNN(nn.Module):
         
         # Variational regularization
         self.parameterize = nn.Linear(out_features, out_features * 2)
-        linear_out_input = out_features
+
+        # TODO: don't declare and overwrite self.out_layer
+        decoder_output_size = out_features
+        self.out_layer = nn.Sequential(
+            nn.ReLU(),
+            nn.Linear(decoder_output_size, out_features),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(out_features, 1)
+            )
         if excluded_features > 0:
-            linear_out_input = out_features + out_features // 2
+            decoder_output_size = out_features + out_features // 2
             self.features_ffn = nn.Sequential(
                 nn.Linear(excluded_features, out_features // 2),
                 nn.ReLU(),
                 nn.Dropout(dropout)
                 )
-        self.out_layer = nn.Sequential(
-            nn.ReLU(),
-            nn.Linear(linear_out_input, out_features),
-            nn.ReLU(),
-            nn.Dropout(dropout),
-            nn.Linear(out_features, 1)
-            )
+            self.out_layer = nn.Sequential(
+                nn.ReLU(),
+                nn.Linear(decoder_output_size, out_features),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(out_features, 1)
+                )
         
         # Initialize encoder graph layers
         for i in range(n_layers):
             self.in_att[i].initialize()
-        #self.out_att.initialize() # Out attn intialization wasn't being performed previously
+        # TODO: initialize outwards attention layer
+        # Official code does not initialize
+        #self.out_att.initialize()
 
     @staticmethod
     def make_fc_graph_edges(nodes):
@@ -245,12 +255,16 @@ class VariationalGNN(nn.Module):
            Both graphs are complete and undirected. The output graph consists of the input graph
            and one additional node for prediction.
 
+           While training, to improve the robustness of the model dealing with sparse data,
+           observed codes will be removed with variable probability.
+
         Args:
             codes (torch.Tensor): tensor of EHR codes for a single patient
 
         Returns:
             (torch.Tensor, torch.Tensor): input and output graph connectivity in COO format
         """
+        mask_prob = 0.05
         n = codes.size()[0]
         observed = codes.nonzero() # observed EHR codes, of shape (num_nonzero, 1)
         if observed.size()[0] == 0:
@@ -258,7 +272,7 @@ class VariationalGNN(nn.Module):
         if self.training:
             # Exclude observed codes with 0.05 probability
             mask = torch.rand(observed.size()[0])
-            mask = mask > 0.05
+            mask = mask > mask_prob
             observed = observed[mask]
             if observed.size()[0] == 0:
                 return torch.LongTensor([[0], [0]]), torch.LongTensor([[n + 1], [n + 1]])
@@ -313,9 +327,7 @@ class VariationalGNN(nn.Module):
         # h_prime: (num_of_nodes, embedding_dim)
         h_prime = self.embed(torch.arange(self.num_of_nodes).long().to(device))
         # Encoder
-        # Observed nodes are masked with 95% probability and then made into complete undirected
-        # graphs.
-        # input_edges: input graph edge connection matrix of nodes after masking
+        # input_edges: input graph edge connection matrix of fully-connected nodes after masking
         # output_edges: output graph edge connection matrix of input nodes and one additional node
         input_edges, output_edges = self.data_to_edges(codes)
         for attn in self.in_att:
@@ -372,11 +384,14 @@ class VariationalGNN(nn.Module):
         else:
             excluded_batch = []
             for i in range(batch.size()[0]):
-                excluded_nodes = torch.FloatTensor([batch[i, :self.excluded_features]]).to(device)
-                excluded_batch.append(self.features_ffn(excluded_nodes))
                 out, kld = self.encoder_decoder(batch[i, self.excluded_features:])
                 included_batch.append(out)
                 kld_batch.append(kld)
+            # TODO: join with above loop. There is no need to use two separate loops, since
+            # they're not dependent
+            for i in range(batch.size()[0]):
+                excluded_nodes = torch.FloatTensor([batch[i, :self.excluded_features]]).to(device)
+                excluded_batch.append(self.features_ffn(excluded_nodes))
             out_batch = torch.cat((torch.stack(excluded_batch), torch.stack(included_batch)),
                                   dim=1)
         logits = self.out_layer(out_batch)
