@@ -27,6 +27,60 @@ def clone_params(param, N):
     return nn.ParameterList([copy.deepcopy(param) for _ in range(N)])
 
 
+class Regularized(torch.nn.Module):
+    """Wrapper of PyTorch module to allow regularization calculations to be performed on gradient 
+       for more efficient computation.
+
+       Hook-based approach adapted from regularization module in
+       https://github.com/szymonmaszke/torchlayers
+    """
+    def __init__(self, module, norm_type='l2', weight_decay=0):
+        super().__init__()
+        self.module = module
+        self.weight_decay = weight_decay
+        if norm_type not in ('l2', 'l1'):
+            raise ValueError('Unsupported norm type')
+        self.regularize = self.l1 if norm_type=='l1' else self.l2
+        # Backward hook is registered on the specified module
+        self.hook = self.module.register_full_backward_hook(self._weight_decay_hook)
+
+    def _weight_decay_hook(self, *_):
+        """Applies regularization to each parameter in module at gradient level.
+        """
+        for param in self.module.parameters():
+            param.grad = self.regularize(param)
+
+    def l1(self, parameter):
+        """Calculates L1 norm for a given module parameter.
+
+        Args:
+            parameter (torch.nn.parameter.Parameter): module parameter
+
+        Returns:
+            torch.Tensor: updated gradient after regularization
+        """
+        return self.weight_decay * torch.sign(parameter.data)
+    
+    def l2(self, parameter):
+        """Calculates L2 norm for a given module parameter.
+
+        Args:
+            parameter (torch.nn.parameter.Parameter): module parameter
+
+        Returns:
+            torch.Tensor: updated gradient after regularization
+        """
+        return self.weight_decay * parameter.data
+
+    def forward(self, *args, **kwargs):
+        """Forward pass returns inner module's own forward method.
+
+        Returns:
+            torch.nn.Module: inner module
+        """
+        return self.module(*args, **kwargs)
+
+
 class LayerNorm(nn.Module):
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
