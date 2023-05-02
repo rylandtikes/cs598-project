@@ -4,8 +4,6 @@ Representation Learning for Electronic Health Records (cited)
 https://github.com/NYUMedML/GNN_for_EHR
 '''
 
-import argparse
-
 import numpy as np
 from sklearn.metrics import precision_recall_curve, auc
 import torch
@@ -21,7 +19,6 @@ print('Using device:', device)
 
 if device.type == 'cuda':
     print(torch.cuda.get_device_name(0))
-
 
 
 def train(data, model, optim, criterion, kl_scale, max_clip_norm=5):
@@ -159,3 +156,21 @@ def str_to_bool(input_str):
         print(msg + '\n')
         raise ValueError(msg)
     return input_str in pos
+
+def str_choice(input_str, options):
+    """Ensures input string is one of a set of valid choices.
+
+    Args:
+        input_str (str): input string
+        options (str): valid choices
+
+    Returns:
+        str: selection
+    """
+    input_str = input_str.lower()
+    options = [opt.lower() for opt in options]
+    if not input_str in options:
+        msg = f'Invalid argument. Argument must be one of these choices: {options}'
+        print(msg + '\n')
+        raise ValueError(msg)
+    return input_str
