@@ -80,6 +80,21 @@ python3 train.py --config_path ./config.yaml
 ```
 [Example Configuration File](./config.yaml)
 
+
+### Training Data Artifacts
+
+Artifiacts from our experiments can be downloaded:
+
+- [training_results](https://cs598-77.s3.amazonaws.com/training_results.zip)
+
+### Data Used in Experiments
+
+The preprocessed MIMIC-III and eICU data we used in most of our experiments can be downloaded:
+
+- [eICU](https://cs598-77.s3.amazonaws.com/preprocessed-datasets/eicu/eicu.zip)
+
+- [MIMIC-III](https://cs598-77.s3.amazonaws.com/preprocessed-datasets/mimic/mimic.zip)
+
 ## References
 
 Zhu, W., & Razavian, N. (2021, April). Variationally regularized graph-based representation learning for electronic health records. In Proceedings of the Conference on Health, Inference, and Learning (pp. 1-13).
