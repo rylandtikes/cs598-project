@@ -1,1 +1,0 @@
-python3 /home/rtikes/cs598-project/train.py --data_path /media/rtikes/buckets/ehr/eicu/out/ --embedding_size 128 --batch_size 32 --reg False  --result_path /media/rtikes/buckets/ehr/eicu/models/batch32/reg_false
