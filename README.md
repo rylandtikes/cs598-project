@@ -81,19 +81,12 @@ python3 train.py --config_path ./config.yaml
 [Example Configuration File](./config.yaml)
 
 
-### Training Data Artifacts
+### Training Artifacts
 
 Artifiacts from our experiments can be downloaded:
 
 - [training_results](https://cs598-77.s3.amazonaws.com/training_results.zip)
 
-### Data Used in Experiments
-
-The preprocessed MIMIC-III and eICU data we used in most of our experiments can be downloaded:
-
-- [eICU](https://cs598-77.s3.amazonaws.com/preprocessed-datasets/eicu/eicu.zip)
-
-- [MIMIC-III](https://cs598-77.s3.amazonaws.com/preprocessed-datasets/mimic/mimic.zip)
 
 ## References
 
