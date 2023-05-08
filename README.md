@@ -101,6 +101,8 @@ Choi, E., Xu, Z., Li, Y., Dusenberry, M. W., Flores, G., Xue, Y., & Dai, A. M. (
 
 ## Demo Video
 
+[Demo](https://youtu.be/LFLJMnoj0mg)
+
 ## Team
 
 | Author           | Email                   | Contribution
