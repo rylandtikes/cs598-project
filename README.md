@@ -85,7 +85,8 @@ python3 train.py --config_path ./config.yaml
 
 Artifiacts from our experiments can be downloaded:
 
-- [training_results](https://cs598-77.s3.amazonaws.com/training_results.zip)
+- [MIMIC-III Models](https://drive.google.com/drive/folders/1HWs3q6DTzEs6hKMHjejgsTSiL7Vuoi7j?usp=sharing)
+- [eICU Models](https://drive.google.com/drive/folders/13dbwFnL9ouxkMFcVrEl0-A0h3JSlsGHU?usp=sharing)
 
 
 ## References
